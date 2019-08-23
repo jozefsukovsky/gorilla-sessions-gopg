@@ -50,6 +50,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	
+	quit := make(chan struct{})
+	go store.PeriodicCleanup(1*time.Minute, quit)
+	
 	http.HandleFunc("/", handler)
 	http.ListenAndServe(":1234", nil)
 }
