@@ -60,6 +60,17 @@ func (s *GoPgStore) load(session *sessions.Session) error {
 
 }
 
+func (s *GoPgStore) delete(session *sessions.Session) error {
+	sess := &Session{
+		Key: session.ID,
+	}
+	_, err := s.db.Model(sess).WherePK().Delete()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *GoPgStore) save(session *sessions.Session) error {
 	var err error
 	encoded, err := securecookie.EncodeMulti(session.Name(), session.Values, s.Codecs...)
@@ -84,7 +95,14 @@ func (s *GoPgStore) save(session *sessions.Session) error {
 }
 
 func (s *GoPgStore) Save(r *http.Request, w http.ResponseWriter, session *sessions.Session) error {
-	// TODO: Delete expired sessions
+	if session.Options.MaxAge < 0 {
+		err := s.delete(session)
+		if err != nil {
+			return err
+		}
+		http.SetCookie(w, sessions.NewCookie(session.Name(), "", session.Options))
+		return nil
+	}
 
 	if session.ID == "" {
 		session.ID = strings.TrimRight(
@@ -128,4 +146,29 @@ func (s *GoPgStore) New(r *http.Request, name string) (*sessions.Session, error)
 
 func (s *GoPgStore) Get(r *http.Request, name string) (*sessions.Session, error) {
 	return sessions.GetRegistry(r).Get(s, name)
+}
+
+func (s *GoPgStore) Delete(r *http.Request, w http.ResponseWriter, session *sessions.Session) error {
+	err := s.delete(session)
+	return err
+}
+
+// Cleanup deletes all expired sessions
+func (s *GoPgStore) Cleanup() {
+	sess := new(Session)
+	s.db.Model(sess).Where("expire < ?", time.Now().UTC()).Delete()
+}
+
+// PeriodicCleanup will execute expired sessions deletion per interval
+func (s *GoPgStore) PeriodicCleanup(i time.Duration, quit <-chan struct{}) {
+	t := time.NewTicker(i)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			s.Cleanup()
+		case <-quit:
+			return
+		}
+	}
 }
