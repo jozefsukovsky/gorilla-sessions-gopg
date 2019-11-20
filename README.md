@@ -1,6 +1,5 @@
 # gorilla/sessions go-pg store
 
-Not ready for serious use
 
 ```go
 package main
